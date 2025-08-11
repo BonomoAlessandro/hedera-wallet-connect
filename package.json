@@ -11,7 +11,12 @@
   "dependencies": {
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "next": "15.4.6"
+    "next": "15.4.6",
+    "@hashgraph/hedera-wallet-connect": "2.0.4-canary.f71fa76.0",
+    "@hashgraph/sdk": "2.63.0",
+    "@reown/appkit": "1.7.16",
+    "@reown/walletkit": "1.2.8",
+    "@walletconnect/modal": "2.7.0"
   },
   "devDependencies": {
     "typescript": "^5",

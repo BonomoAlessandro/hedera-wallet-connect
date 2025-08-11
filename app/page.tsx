@@ -1,103 +1,128 @@
-import Image from "next/image";
+'use client'
+
+import {DAppConnector, HederaChainId, HederaJsonRpcMethod, HederaSessionEvent} from "@hashgraph/hedera-wallet-connect";
+import {useEffect, useState} from "react";
+import {SessionTypes} from "@walletconnect/types";
+import {LedgerId, PrivateKey, TokenUpdateTransaction, Transaction} from "@hashgraph/sdk";
 
 export default function Home() {
-  return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    // INFO: Private Key testnet wallet => ae094bb14c3367f4ec2b9553f6b0d275816a0bb057cbfd69c46e7405e8dc3092
+
+    const metadata = {
+        name: 'Hedera Integration using Hedera DAppConnector - v1 approach',
+        description: 'Hedera dAppConnector Example',
+        url: '',
+        icons: ['https://avatars.githubusercontent.com/u/31002956'],
+    }
+
+    const [dAppConnector, setDAppConnector] = useState<DAppConnector>();
+    const [session, setSession] = useState<SessionTypes.Struct>();
+
+    const [manuallySignedTransactionHex, setManuallySignedTransactionHex] = useState<string>();
+    const [walletSignedTransactionHex, setWalletSignedTransactionHex] = useState<string>();
+
+    useEffect(() => {
+        if (!dAppConnector) {
+            const connector = new DAppConnector(
+                metadata,
+                LedgerId.TESTNET,
+                "ebd13bdb8866bc09bfe3c4832ed1363d",
+                Object.values(HederaJsonRpcMethod),
+                [HederaSessionEvent.ChainChanged, HederaSessionEvent.AccountsChanged],
+                [HederaChainId.Mainnet, HederaChainId.Testnet],
+            )
+
+            setDAppConnector(connector);
+        }
+    }, []);
+
+    const connectWallet = async () => {
+        if (!dAppConnector) {
+            console.error('No dAppConnector available');
+            return;
+        }
+
+        await dAppConnector.init({ logger: 'error' });
+        await dAppConnector.disconnectAll();
+
+        const walletSession = await dAppConnector.openModal()
+        if (walletSession) {
+            setSession(walletSession);
+        }
+    };
+
+    const signTransactionManually = async (transactionHex: string) => {
+        const signingKey = PrivateKey.fromStringED25519("ae094bb14c3367f4ec2b9553f6b0d275816a0bb057cbfd69c46e7405e8dc3092");
+
+        const transactionBytes = Buffer.from(transactionHex, 'hex');
+        const transaction = TokenUpdateTransaction.fromBytes(transactionBytes) as TokenUpdateTransaction;
+        const signedTransaction = await transaction.sign(signingKey);
+        const signedBytes = signedTransaction.toBytes();
+        return Buffer.from(signedBytes).toString('hex');
+    }
+
+    const signTransactionHederaWalletConnect = async (transactionHex: string) => {
+        if (!session) {
+            console.error('No wallet session available');
+            return;
+        }
+        if (!dAppConnector) {
+            console.error('No dAppConnector available');
+            return;
+        }
+
+        const transactionBytes = Buffer.from(transactionHex, 'hex');
+        const transaction = TokenUpdateTransaction.fromBytes(transactionBytes) as TokenUpdateTransaction;
+
+        const params = {
+            signerAccountId: session.namespaces?.hedera?.accounts?.[0],
+            transactionBody: transaction
+        }
+        const signedTransaction = await dAppConnector.signTransaction(params)
+
+        if (signedTransaction instanceof Transaction) {
+            const signedTransactionBytes = signedTransaction.toBytes();
+            return Buffer.from(signedTransactionBytes).toString('hex')
+        }
+    }
+
+    const signTransaction = async () => {
+        const transactionHex = "0a682a660a620a1b0a0c08e6d6d2c40610daacefc802120908001000188ba3e30218001206080010001805188084af5f220208783200a2022f0a090800100018abeb8d032a221220bf7e8c87be6c3dca12afe9790491543004e29116be95c6b14ce42ac73ff1a93c1200";
+
+        const manuallySignedTransactionHex = await signTransactionManually(transactionHex)
+        const hederaWalletConnectSignedTransactionHex = await signTransactionHederaWalletConnect(transactionHex)
+
+        setManuallySignedTransactionHex(manuallySignedTransactionHex);
+        setWalletSignedTransactionHex(hederaWalletConnectSignedTransactionHex);
+
+        console.log(manuallySignedTransactionHex);
+        console.log(hederaWalletConnectSignedTransactionHex);
+    }
+
+    return (
+        <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+                <button
+                    onClick={async () => {
+                        await connectWallet();
+                    }}
+                    className="!block !w-full border"
+                >Connect Wallet</button>
+
+                <button
+                    onClick={async () => {
+                        await signTransaction();
+                    }}
+                    className="!block !w-full border"
+                >Sign Transaction</button>
+            </div>
+
+            <div className="flex flex-col gap-2">
+                <div>Manually Signed Transaction Hex: {manuallySignedTransactionHex}</div>
+                <div>Hedera Wallet Connect Signed Transaction Hex: {walletSignedTransactionHex}</div>
+            </div>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+
+    );
 }
